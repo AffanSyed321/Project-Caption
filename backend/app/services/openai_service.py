@@ -5,10 +5,21 @@ import os
 
 
 class OpenAIService:
-    """Service for OpenAI Vision and GPT-4o interactions"""
+    """
+    Service for OpenAI Vision and GPT-5.1 interactions
+
+    HYBRID APPROACH:
+    - GPT-4o: Image analysis (vision capability required)
+    - GPT-5.1: Caption generation using Responses API with reasoning
+
+    This ensures we can analyze images AND use the latest GPT-5.1 reasoning
+    for high-quality, localized caption generation.
+    """
 
     def __init__(self, api_key: str):
         self.client = OpenAI(api_key=api_key)
+        self.vision_model = "gpt-4o"  # Vision analysis (GPT-5.1 may not support vision yet)
+        self.text_model = "gpt-5.1"   # Caption generation with Responses API + reasoning
 
     def encode_image(self, image_path: str) -> str:
         """Encode image to base64 for Vision API"""
@@ -24,7 +35,7 @@ class OpenAIService:
             base64_image = self.encode_image(image_path)
 
             response = self.client.chat.completions.create(
-                model="gpt-4o",
+                model=self.vision_model,
                 messages=[
                     {
                         "role": "user",
@@ -111,23 +122,22 @@ Create an authentic, localized social media caption that:
 
 Generate the caption now:"""
 
-            response = self.client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert social media copywriter who specializes in creating authentic, localized content that resonates with specific communities."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                max_tokens=800,
-                temperature=0.9  # Higher temperature for more creative variety
+            # Use GPT-5.1 Responses API with medium reasoning for quality captions
+            response = self.client.responses.create(
+                model=self.text_model,
+                input=f"""You are an expert social media copywriter who specializes in creating authentic, localized content that resonates with specific communities.
+
+{prompt}""",
+                reasoning={
+                    "effort": "medium"  # Medium reasoning for balanced quality and speed
+                },
+                text={
+                    "verbosity": "medium"  # Medium verbosity for well-structured captions
+                },
+                max_output_tokens=800
             )
 
-            return response.choices[0].message.content
+            return response.output_text
 
         except Exception as e:
             return f"Error generating caption: {str(e)}"
@@ -167,23 +177,22 @@ Now create a DIFFERENT version that:
 
 Create a fresh, alternative caption now:"""
 
-            response = self.client.chat.completions.create(
-                model="gpt-4o",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are an expert social media copywriter creating alternative versions of localized content."
-                    },
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
-                max_tokens=800,
-                temperature=1.0  # Even higher temperature for more variety
+            # Use GPT-5.1 Responses API with medium reasoning for variations
+            response = self.client.responses.create(
+                model=self.text_model,
+                input=f"""You are an expert social media copywriter creating alternative versions of localized content.
+
+{prompt}""",
+                reasoning={
+                    "effort": "medium"  # Medium reasoning for creative variations
+                },
+                text={
+                    "verbosity": "medium"  # Medium verbosity for variety
+                },
+                max_output_tokens=800
             )
 
-            return response.choices[0].message.content
+            return response.output_text
 
         except Exception as e:
             return f"Error regenerating caption: {str(e)}"
