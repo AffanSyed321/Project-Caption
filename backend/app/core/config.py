@@ -1,0 +1,21 @@
+from pydantic_settings import BaseSettings
+from typing import Optional
+
+
+class Settings(BaseSettings):
+    # API Settings
+    API_V1_STR: str = "/api/v1"
+    PROJECT_NAME: str = "Urban Air Caption Generator"
+
+    # OpenAI Settings
+    OPENAI_API_KEY: Optional[str] = None
+
+    # CORS Settings
+    BACKEND_CORS_ORIGINS: list = ["http://localhost:3000", "http://localhost:5173"]
+
+    class Config:
+        env_file = ".env"
+        case_sensitive = True
+
+
+settings = Settings()
