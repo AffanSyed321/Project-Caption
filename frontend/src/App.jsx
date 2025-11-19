@@ -1,51 +1,121 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import axios from 'axios';
 import './App.css';
 
 const API_URL = 'http://localhost:8000/api/v1';
 
 function App() {
-  const [image, setImage] = useState(null);
-  const [imagePreview, setImagePreview] = useState(null);
+  const [media, setMedia] = useState(null);
+  const [mediaPreview, setMediaPreview] = useState(null);
+  const [mediaType, setMediaType] = useState('image');
   const [goal, setGoal] = useState('');
   const [address, setAddress] = useState('');
   const [platform, setPlatform] = useState('Facebook');
   const [loading, setLoading] = useState(false);
+  const [loadingStage, setLoadingStage] = useState('');
   const [generatedCaption, setGeneratedCaption] = useState('');
   const [editedCaption, setEditedCaption] = useState('');
   const [locationInfo, setLocationInfo] = useState(null);
+  const [reasoning, setReasoning] = useState(null);
+  const [qualityScores, setQualityScores] = useState(null);
+  const [fullMediaAnalysis, setFullMediaAnalysis] = useState('');
+  const [fullLocalResearch, setFullLocalResearch] = useState('');
+  const [expandedSections, setExpandedSections] = useState({
+    media: false,
+    research: false,
+    strategy: false
+  });
+  const [savedLocations, setSavedLocations] = useState([]);
+  const [selectedLocationId, setSelectedLocationId] = useState('');
   const [error, setError] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
 
-  const handleImageChange = (e) => {
+  useEffect(() => {
+    // Load saved locations on mount
+    loadLocations();
+  }, []);
+
+  const loadLocations = async () => {
+    try {
+      const response = await axios.get(`${API_URL}/locations`);
+      setSavedLocations(response.data.locations);
+
+      // If no saved locations and no location selected, default to "new" to show address input
+      if (response.data.locations.length === 0 && !selectedLocationId) {
+        setSelectedLocationId('new');
+      }
+    } catch (err) {
+      console.error('Error loading locations:', err);
+    }
+  };
+
+  const handleLocationSelect = (e) => {
+    const value = e.target.value;
+    setSelectedLocationId(value);
+
+    if (value === 'new') {
+      // User selected "Enter New Address" - clear address for manual entry
+      setAddress('');
+    } else if (value) {
+      // User selected an existing location - fill in the address
+      const location = savedLocations.find(loc => loc.id === parseInt(value));
+      if (location) {
+        setAddress(location.address);
+      }
+    } else {
+      // User selected empty option - clear address
+      setAddress('');
+    }
+  };
+
+  const isVideo = (filename) => {
+    const videoExtensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.m4v'];
+    return videoExtensions.some(ext => filename.toLowerCase().endsWith(ext));
+  };
+
+  const handleMediaChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      setImage(file);
+      setMedia(file);
+      const type = isVideo(file.name) ? 'video' : 'image';
+      setMediaType(type);
+
       const reader = new FileReader();
       reader.onloadend = () => {
-        setImagePreview(reader.result);
+        setMediaPreview(reader.result);
       };
       reader.readAsDataURL(file);
     }
   };
 
   const handleGenerate = async () => {
-    if (!image || !goal || !address) {
-      setError('Please fill in all fields and upload an image');
+    if (!media || !goal || !address) {
+      setError('Please fill in all fields and upload an image or video');
       return;
     }
 
     setLoading(true);
     setError('');
     setSaveMessage('');
+    setReasoning(null);
+    setQualityScores(null);
 
     const formData = new FormData();
-    formData.append('image', image);
+    formData.append('media', media);
     formData.append('goal', goal);
     formData.append('address', address);
     formData.append('platform', platform);
 
     try {
+      // Show progress stages
+      setLoadingStage(`Analyzing ${mediaType}...`);
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      setLoadingStage('Researching local area...');
+      await new Promise(resolve => setTimeout(resolve, 500));
+
+      setLoadingStage('Generating localized caption...');
+
       const response = await axios.post(`${API_URL}/generate-caption`, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
@@ -55,17 +125,26 @@ function App() {
       setGeneratedCaption(response.data.caption);
       setEditedCaption(response.data.caption);
       setLocationInfo(response.data.location_info);
+      setReasoning(response.data.reasoning);
+      setQualityScores(response.data.quality_scores);
+      setFullMediaAnalysis(response.data.media_analysis || '');
+      setFullLocalResearch(response.data.location_info?.full_research || '');
       setError('');
+      setLoadingStage('');
+
+      // Reload locations in case a new one was saved
+      loadLocations();
     } catch (err) {
       setError(err.response?.data?.detail || 'Error generating caption. Make sure backend is running and API key is configured.');
       console.error(err);
+      setLoadingStage('');
     } finally {
       setLoading(false);
     }
   };
 
   const handleRegenerate = async () => {
-    if (!image || !goal || !address) {
+    if (!media || !goal || !address) {
       setError('Please fill in all fields');
       return;
     }
@@ -75,7 +154,7 @@ function App() {
     setSaveMessage('');
 
     const formData = new FormData();
-    formData.append('image', image);
+    formData.append('media', media);
     formData.append('goal', goal);
     formData.append('address', address);
     formData.append('platform', platform);
@@ -90,6 +169,7 @@ function App() {
 
       setGeneratedCaption(response.data.caption);
       setEditedCaption(response.data.caption);
+      setQualityScores(response.data.quality_scores);
       setError('');
     } catch (err) {
       setError(err.response?.data?.detail || 'Error regenerating caption');
@@ -120,17 +200,65 @@ function App() {
     }
   };
 
+  const toggleSection = (section) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }));
+  };
+
+  const handleReResearch = async () => {
+    if (!address) {
+      setError('Address is required to re-research');
+      return;
+    }
+
+    setLoadingStage('Re-researching location...');
+
+    try {
+      const response = await axios.post(`${API_URL}/research-location`, {
+        address: address
+      });
+
+      setFullLocalResearch(response.data.full_research || '');
+      setLocationInfo(response.data.location_info);
+
+      // Update reasoning with new research
+      if (reasoning) {
+        setReasoning({
+          ...reasoning,
+          local_research_summary: `✓ Re-researched ${response.data.location_info.city}, ${response.data.location_info.state}: ${response.data.full_research?.substring(0, 300)}...`
+        });
+      }
+
+      setLoadingStage('');
+      setSaveMessage('Location re-researched successfully! You may want to regenerate the caption.');
+      setTimeout(() => setSaveMessage(''), 5000);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Error re-researching location');
+      setLoadingStage('');
+    }
+  };
+
   const handleReset = () => {
-    setImage(null);
-    setImagePreview(null);
+    setMedia(null);
+    setMediaPreview(null);
+    setMediaType('image');
     setGoal('');
     setAddress('');
+    setSelectedLocationId('');
     setPlatform('Facebook');
     setGeneratedCaption('');
     setEditedCaption('');
     setLocationInfo(null);
+    setReasoning(null);
+    setQualityScores(null);
+    setFullMediaAnalysis('');
+    setFullLocalResearch('');
+    setExpandedSections({ media: false, research: false, strategy: false });
     setError('');
     setSaveMessage('');
+    setLoadingStage('');
   };
 
   return (
@@ -146,16 +274,20 @@ function App() {
           <h2>Create Caption</h2>
 
           <div className="form-group">
-            <label>Upload Image</label>
+            <label>Upload Image or Video</label>
             <input
               type="file"
-              accept="image/*"
-              onChange={handleImageChange}
+              accept="image/*,video/*"
+              onChange={handleMediaChange}
               className="file-input"
             />
-            {imagePreview && (
+            {mediaPreview && (
               <div className="image-preview">
-                <img src={imagePreview} alt="Preview" />
+                {mediaType === 'video' ? (
+                  <video src={mediaPreview} controls style={{width: '100%', maxHeight: '300px'}} />
+                ) : (
+                  <img src={mediaPreview} alt="Preview" />
+                )}
               </div>
             )}
           </div>
@@ -172,15 +304,34 @@ function App() {
           </div>
 
           <div className="form-group">
-            <label>Urban Air Location Address</label>
-            <input
-              type="text"
-              placeholder="e.g., 2051 Skibo Rd, Fayetteville, NC 28314"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-              className="text-input"
-            />
+            <label>Urban Air Location</label>
+            <select
+              value={selectedLocationId}
+              onChange={handleLocationSelect}
+              className="select-input"
+            >
+              <option value="">-- Select a location --</option>
+              {savedLocations.map(loc => (
+                <option key={loc.id} value={loc.id}>
+                  {loc.display}
+                </option>
+              ))}
+              <option value="new">+ Enter New Location</option>
+            </select>
           </div>
+
+          {selectedLocationId === 'new' && (
+            <div className="form-group">
+              <label>Enter New Address</label>
+              <input
+                type="text"
+                placeholder="e.g., 2051 Skibo Rd, Fayetteville, NC 28314"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                className="text-input"
+              />
+            </div>
+          )}
 
           <div className="form-group">
             <label>Platform</label>
@@ -196,11 +347,18 @@ function App() {
 
           <button
             onClick={handleGenerate}
-            disabled={loading || !image || !goal || !address}
+            disabled={loading || !media || !goal || !address}
             className="btn btn-primary"
           >
-            {loading ? 'Generating...' : 'Generate Caption'}
+            {loading ? (loadingStage || 'Generating...') : 'Generate Caption'}
           </button>
+
+          {loading && (
+            <div style={{ marginTop: '10px', fontSize: '14px', color: '#666' }}>
+              <div>⏱️ Estimated time: 30-45 seconds</div>
+              <div style={{ marginTop: '5px' }}>{loadingStage}</div>
+            </div>
+          )}
 
           {generatedCaption && (
             <button
@@ -252,6 +410,242 @@ function App() {
               </div>
 
               {saveMessage && <div className="success-message">{saveMessage}</div>}
+
+              {qualityScores && (
+                <div className="quality-scores-section" style={{
+                  marginTop: '20px',
+                  padding: '20px',
+                  background: qualityScores.quality_tier === 'Excellent' ? '#e8f5e9' :
+                             qualityScores.quality_tier === 'Good' ? '#e3f2fd' :
+                             qualityScores.quality_tier === 'Fair' ? '#fff3e0' : '#ffebee',
+                  borderRadius: '8px',
+                  border: '2px solid ' + (qualityScores.quality_tier === 'Excellent' ? '#4caf50' :
+                                          qualityScores.quality_tier === 'Good' ? '#2196f3' :
+                                          qualityScores.quality_tier === 'Fair' ? '#ff9800' : '#f44336')
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                    <h3 style={{ fontSize: '18px', margin: 0, color: '#333' }}>
+                      ⭐ Quality Analysis
+                    </h3>
+                    <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                      <span style={{
+                        padding: '6px 12px',
+                        borderRadius: '20px',
+                        fontSize: '14px',
+                        fontWeight: 'bold',
+                        background: qualityScores.quality_tier === 'Excellent' ? '#4caf50' :
+                                   qualityScores.quality_tier === 'Good' ? '#2196f3' :
+                                   qualityScores.quality_tier === 'Fair' ? '#ff9800' : '#f44336',
+                        color: 'white'
+                      }}>
+                        {qualityScores.quality_tier}
+                      </span>
+                      <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#333' }}>
+                        {qualityScores.overall_score}/100
+                      </span>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
+                    {[
+                      { label: 'Brand Consistency', score: qualityScores.brand_consistency },
+                      { label: 'Local Relevance', score: qualityScores.local_relevance },
+                      { label: 'Goal Alignment', score: qualityScores.goal_alignment },
+                      { label: 'Overall Quality', score: qualityScores.overall_quality }
+                    ].map(item => (
+                      <div key={item.label}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', fontSize: '13px' }}>
+                          <span style={{ fontWeight: '500', color: '#555' }}>{item.label}</span>
+                          <span style={{ fontWeight: 'bold', color: '#333' }}>{item.score}/100</span>
+                        </div>
+                        <div style={{
+                          width: '100%',
+                          height: '8px',
+                          background: '#e0e0e0',
+                          borderRadius: '4px',
+                          overflow: 'hidden'
+                        }}>
+                          <div style={{
+                            width: `${item.score}%`,
+                            height: '100%',
+                            background: item.score >= 90 ? '#4caf50' :
+                                       item.score >= 80 ? '#2196f3' :
+                                       item.score >= 70 ? '#ff9800' : '#f44336',
+                            transition: 'width 0.3s ease'
+                          }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {qualityScores.strengths && qualityScores.strengths.length > 0 && (
+                    <div style={{ marginBottom: '10px' }}>
+                      <strong style={{ color: '#2e7d32', fontSize: '14px' }}>✓ Strengths:</strong>
+                      <ul style={{ margin: '5px 0', paddingLeft: '20px', fontSize: '13px', color: '#555' }}>
+                        {qualityScores.strengths.map((strength, idx) => (
+                          <li key={idx} style={{ marginBottom: '3px' }}>{strength}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {qualityScores.issues && qualityScores.issues.length > 0 && qualityScores.issues[0] !== "Could not analyze automatically" && (
+                    <div style={{ marginBottom: '10px' }}>
+                      <strong style={{ color: '#c62828', fontSize: '14px' }}>⚠ Issues:</strong>
+                      <ul style={{ margin: '5px 0', paddingLeft: '20px', fontSize: '13px', color: '#555' }}>
+                        {qualityScores.issues.map((issue, idx) => (
+                          <li key={idx} style={{ marginBottom: '3px' }}>{issue}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {qualityScores.recommendation && (
+                    <div style={{
+                      marginTop: '10px',
+                      padding: '10px',
+                      background: 'rgba(255,255,255,0.5)',
+                      borderRadius: '6px',
+                      fontSize: '13px',
+                      fontWeight: '500',
+                      color: '#333'
+                    }}>
+                      <strong>Recommendation:</strong> {qualityScores.recommendation}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {reasoning && (
+                <div className="reasoning-section" style={{
+                  marginTop: '20px',
+                  padding: '15px',
+                  background: '#f8f9fa',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  lineHeight: '1.6'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                    <h3 style={{ fontSize: '16px', margin: 0, color: '#333' }}>
+                      📊 Caption Generation Process
+                    </h3>
+                    <button
+                      onClick={handleReResearch}
+                      disabled={loadingStage === 'Re-researching location...'}
+                      className="btn btn-secondary"
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '13px',
+                        background: '#6c757d',
+                        border: 'none',
+                        borderRadius: '4px',
+                        color: 'white',
+                        cursor: 'pointer'
+                      }}
+                    >
+                      {loadingStage === 'Re-researching location...' ? '🔄 Researching...' : '🔄 Re-research Location'}
+                    </button>
+                  </div>
+
+                  {/* Media Analysis Section */}
+                  <div style={{ marginBottom: '15px', padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #e0e0e0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <strong style={{ color: '#333' }}>Media Analysis:</strong>
+                      <button
+                        onClick={() => toggleSection('media')}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#2196f3',
+                          cursor: 'pointer',
+                          fontSize: '13px',
+                          fontWeight: '500'
+                        }}
+                      >
+                        {expandedSections.media ? '▼ Show Less' : '▶ Show Full Analysis'}
+                      </button>
+                    </div>
+                    <div style={{ color: '#555' }}>
+                      {expandedSections.media ? (
+                        <div style={{ whiteSpace: 'pre-wrap', maxHeight: '400px', overflowY: 'auto', padding: '8px', background: '#fafafa', borderRadius: '4px' }}>
+                          {fullMediaAnalysis || reasoning.media_confirmation}
+                        </div>
+                      ) : (
+                        <div>{reasoning.media_confirmation}</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Local Research Section */}
+                  <div style={{ marginBottom: '15px', padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #e0e0e0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <strong style={{ color: '#333' }}>Local Research:</strong>
+                      <button
+                        onClick={() => toggleSection('research')}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#2196f3',
+                          cursor: 'pointer',
+                          fontSize: '13px',
+                          fontWeight: '500'
+                        }}
+                      >
+                        {expandedSections.research ? '▼ Show Less' : '▶ Show Full Research'}
+                      </button>
+                    </div>
+                    <div style={{ color: '#555' }}>
+                      {expandedSections.research ? (
+                        <div style={{ whiteSpace: 'pre-wrap', maxHeight: '400px', overflowY: 'auto', padding: '8px', background: '#fafafa', borderRadius: '4px' }}>
+                          {fullLocalResearch || reasoning.local_research_summary}
+                        </div>
+                      ) : (
+                        <div>{reasoning.local_research_summary}</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Caption Strategy Section */}
+                  <div style={{ padding: '12px', background: 'white', borderRadius: '6px', border: '1px solid #e0e0e0' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <strong style={{ color: '#333' }}>Caption Strategy:</strong>
+                      <button
+                        onClick={() => toggleSection('strategy')}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          color: '#2196f3',
+                          cursor: 'pointer',
+                          fontSize: '13px',
+                          fontWeight: '500'
+                        }}
+                      >
+                        {expandedSections.strategy ? '▼ Show Less' : '▶ Show More'}
+                      </button>
+                    </div>
+                    <div style={{ color: '#555' }}>
+                      {expandedSections.strategy ? (
+                        <div style={{ whiteSpace: 'pre-wrap', padding: '8px', background: '#fafafa', borderRadius: '4px' }}>
+                          {reasoning.caption_strategy}
+
+                          {locationInfo && (
+                            <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px solid #e0e0e0' }}>
+                              <strong>Location Details:</strong>
+                              <ul style={{ marginTop: '5px', paddingLeft: '20px' }}>
+                                <li>City: {locationInfo.city}</li>
+                                <li>State: {locationInfo.state}</li>
+                                <li>Area Type: {locationInfo.is_rural ? 'Rural' : 'Urban/Suburban'}</li>
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div>{reasoning.caption_strategy}</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div className="empty-state">

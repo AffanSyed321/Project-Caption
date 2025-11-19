@@ -2,6 +2,9 @@ import base64
 from openai import OpenAI
 from typing import Dict, Optional
 import os
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config.brand_voice import get_brand_voice_prompt
 
 
 class OpenAIService:
@@ -25,6 +28,16 @@ class OpenAIService:
         """Encode image to base64 for Vision API"""
         with open(image_path, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode('utf-8')
+
+    def encode_video(self, video_path: str) -> str:
+        """Encode video to base64 for Vision API"""
+        with open(video_path, "rb") as video_file:
+            return base64.b64encode(video_file.read()).decode('utf-8')
+
+    def is_video_file(self, filename: str) -> bool:
+        """Check if file is a video"""
+        video_extensions = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.m4v']
+        return any(filename.lower().endswith(ext) for ext in video_extensions)
 
     def analyze_image(self, image_path: str) -> str:
         """
@@ -68,6 +81,71 @@ Be concise but thorough."""
         except Exception as e:
             return f"Error analyzing image: {str(e)}"
 
+    def analyze_video(self, video_path: str) -> str:
+        """
+        Use GPT-4o Vision to analyze the uploaded video
+        Returns description of what the video shows and its purpose
+        """
+        try:
+            base64_video = self.encode_video(video_path)
+
+            # Determine video mime type
+            ext = video_path.lower().split('.')[-1]
+            mime_type_map = {
+                'mp4': 'video/mp4',
+                'mov': 'video/quicktime',
+                'avi': 'video/x-msvideo',
+                'mkv': 'video/x-matroska',
+                'webm': 'video/webm',
+                'm4v': 'video/mp4'
+            }
+            mime_type = mime_type_map.get(ext, 'video/mp4')
+
+            response = self.client.chat.completions.create(
+                model=self.vision_model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": """Analyze this Urban Air promotional video. Describe:
+1. What activities and attractions are shown throughout the video
+2. The energy and atmosphere of the location
+3. Key moments or highlights in the video
+4. People shown (families, kids, teens, staff) and their interactions
+5. Any text, graphics, or promotional messages displayed
+6. The overall message or promotion the video is conveying
+7. Target demographic based on the video content
+
+Provide a comprehensive analysis that captures the full narrative and feel of the video."""
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:{mime_type};base64,{base64_video}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                max_tokens=600
+            )
+
+            return response.choices[0].message.content
+
+        except Exception as e:
+            return f"Error analyzing video: {str(e)}"
+
+    def analyze_media(self, file_path: str) -> str:
+        """
+        Analyze either image or video based on file type
+        """
+        if self.is_video_file(file_path):
+            return self.analyze_video(file_path)
+        else:
+            return self.analyze_image(file_path)
+
     def generate_caption(
         self,
         goal: str,
@@ -76,11 +154,12 @@ Be concise but thorough."""
         platform: str
     ) -> str:
         """
-        Generate localized caption using GPT-4o based on:
+        Generate localized caption using GPT-5.1 based on:
         - Goal of the post
         - Image analysis
         - Local area research
         - Target platform (Facebook or Instagram)
+        - Urban Air brand voice guidelines
         """
         try:
             city = local_research.get("city", "")
@@ -88,37 +167,36 @@ Be concise but thorough."""
             chamber_info = local_research.get("chamber_info", "")
             gov_info = local_research.get("government_info", "")
             is_rural = local_research.get("is_rural", False)
+            gpt_research = local_research.get("gpt_research", "")
 
-            # Build the prompt
+            # Build the prompt with brand voice guidelines
+            brand_voice = get_brand_voice_prompt()
+
             prompt = f"""You are a social media copywriter creating a {platform} caption for Urban Air Adventure Park in {city}, {state}.
+
+{brand_voice}
 
 **POST GOAL:** {goal}
 
-**IMAGE ANALYSIS:**
+**IMAGE/VIDEO ANALYSIS:**
 {image_analysis}
 
 **LOCAL AREA RESEARCH:**
-Chamber of Commerce Info: {chamber_info[:500]}
-Government/City Info: {gov_info[:500]}
-Area Type: {"Rural" if is_rural else "Urban"}
+{gpt_research[:800]}
+
+Chamber of Commerce: {chamber_info[:300]}
+Government/City Info: {gov_info[:300]}
+Area Type: {"Rural community" if is_rural else "Urban/suburban area"}
 
 **YOUR TASK:**
 Create an authentic, localized social media caption that:
-1. Achieves the stated goal
+1. Achieves the stated goal: "{goal}"
 2. Reflects the local community's culture and vibe (not generic!)
 3. Uses language that resonates with {city}, {state} residents
-4. Matches the image content and tone
+4. Matches the image/video content and tone
 5. Feels personal and community-focused, NOT like a corporate template
 6. Optimized for {platform}
-
-**GUIDELINES:**
-- Use local references when appropriate (local events, culture, community values)
-- Keep it authentic - this should NOT feel like a location swap
-- Include relevant hashtags (mix of Urban Air brand + local)
-- {"Keep it concise and visual" if platform == "Instagram" else "Can be more detailed"}
-- Include a clear call-to-action
-- Do NOT use overly generic phrases like "Planning a BIRTHDAY BLAST?"
-- Make it sound like it was written BY someone from {city}, FOR people in {city}
+7. **STRICTLY FOLLOWS** all brand voice requirements above
 
 Generate the caption now:"""
 
