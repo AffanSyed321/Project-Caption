@@ -5,7 +5,7 @@ from typing import Optional, List
 class Settings(BaseSettings):
     # API Settings
     API_V1_STR: str = "/api/v1"
-    PROJECT_NAME: str = "Urban Air Caption Generator"
+    PROJECT_NAME: str = "Captionator"
 
     # OpenAI Settings
     OPENAI_API_KEY: Optional[str] = None

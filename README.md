@@ -1,4 +1,4 @@
-# Urban Air Caption Generator
+# Captionator
 
 A web platform that generates localized, audience-specific social media captions for Urban Air Adventure Park locations. The system uses AI to research local demographics, culture, and community characteristics, then creates captions that resonate with each location's unique audience.
 
