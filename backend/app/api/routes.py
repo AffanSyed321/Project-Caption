@@ -312,6 +312,28 @@ async def get_location(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.delete("/locations/{location_id}")
+async def delete_location(
+    location_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a location by ID
+    """
+    try:
+        location = db.query(Location).filter(Location.id == location_id).first()
+        if not location:
+            raise HTTPException(status_code=404, detail="Location not found")
+
+        db.delete(location)
+        db.commit()
+
+        return {"message": "Location deleted successfully"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/research-location")
 async def research_location(
     address: str = Form(...),

@@ -172,53 +172,69 @@ Provide a comprehensive analysis that captures the full narrative and feel of th
             # Build the prompt with brand voice guidelines
             brand_voice = get_brand_voice_prompt()
 
-            prompt = f"""You are a social media copywriter creating a {platform} caption for Urban Air Adventure Park in {city}, {state}.
+            prompt = f"""You are a local social media personality creating a {platform} caption for Urban Air Adventure Park in {city}, {state}.
+            
+            {brand_voice}
 
-{brand_voice}
+            **POST GOAL:** {goal}
 
-**POST GOAL:** {goal}
+            **IMAGE/VIDEO ANALYSIS:**
+            {image_analysis}
 
-**IMAGE/VIDEO ANALYSIS:**
-{image_analysis}
+            **DEEP LOCAL RESEARCH:**
+            {gpt_research[:4000]}
 
-**LOCAL AREA RESEARCH:**
-{gpt_research[:800]}
+            **YOUR MISSION:**
+            Write a caption that sounds like it was written by a LOCAL, for LOCALS.
+            1. **Use the Research:** Reference specific local things mentioned in the research (neighborhoods, events, vibes).
+            2. **No Tourist Speak:** Don't say "Welcome to [City]!" or generic phrases. Speak like you live there.
+            3. **Authentic Voice:** If the research says locals are sarcastic, be sarcastic. If they are earnest, be earnest.
+            4. **Platform Native:** Optimize for {platform} (hashtags, formatting).
+            5. **Community Connection:** Make them feel like Urban Air is *part* of the community, not just a business in it.
 
-Chamber of Commerce: {chamber_info[:300]}
-Government/City Info: {gov_info[:300]}
-Area Type: {"Rural community" if is_rural else "Urban/suburban area"}
+            DO NOT sound like a corporate marketing bot. Be human, be local, be real."""
 
-**YOUR TASK:**
-Create an authentic, localized social media caption that:
-1. Achieves the stated goal: "{goal}"
-2. Reflects the local community's culture and vibe (not generic!)
-3. Uses language that resonates with {city}, {state} residents
-4. Matches the image/video content and tone
-5. Feels personal and community-focused, NOT like a corporate template
-6. Optimized for {platform}
-7. **STRICTLY FOLLOWS** all brand voice requirements above
-
-Generate the caption now:"""
-
-            # Use GPT-5.1 Responses API with medium reasoning for quality captions
-            response = self.client.responses.create(
-                model=self.text_model,
-                input=f"""You are an expert social media copywriter who specializes in creating authentic, localized content that resonates with specific communities.
-
-{prompt}""",
-                reasoning={
-                    "effort": "medium"  # Medium reasoning for balanced quality and speed
-                },
-                text={
-                    "verbosity": "medium"  # Medium verbosity for well-structured captions
-                },
-                max_output_tokens=800
+            # Use GPT-5.1 with High Reasoning (using chat.completions)
+            response = self.client.chat.completions.create(
+                model="gpt-5.1",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an expert local copywriter who writes authentic, community-focused content."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                # High reasoning often requires higher max_tokens
+                max_tokens=1000
             )
 
-            return response.output_text
+            return response.choices[0].message.content
 
         except Exception as e:
-            return f"Error generating caption: {str(e)}"
+            # Fallback if GPT-5.1 is not available (graceful degradation)
+            print(f"GPT-5.1 failed: {str(e)}. Falling back to GPT-4o.")
+            try:
+                response = self.client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are an expert local copywriter."
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    temperature=0.7,
+                    max_tokens=800
+                )
+                return response.choices[0].message.content
+            except Exception as inner_e:
+                return f"Error generating caption: {str(inner_e)}"
 
     def regenerate_caption(
         self,
@@ -243,34 +259,51 @@ Generate the caption now:"""
 "{previous_caption}"
 
 Now create a DIFFERENT version that:
-- Has a different tone/approach
-- Uses different local references
-- Has different wording while maintaining the same goal
-- Still feels authentic to {city}, {state}
+- Has a completely different angle or "hook"
+- Uses different local references from the research
+- Feels even MORE "insider" and local
+- Still achieves the goal: {goal}
 
-**POST GOAL:** {goal}
-**IMAGE ANALYSIS:** {image_analysis}
-**LOCAL INFO:** Chamber: {chamber_info[:500]}
 **PLATFORM:** {platform}
 
-Create a fresh, alternative caption now:"""
+Create a fresh, authentic alternative now:"""
 
-            # Use GPT-5.1 Responses API with medium reasoning for variations
-            response = self.client.responses.create(
-                model=self.text_model,
-                input=f"""You are an expert social media copywriter creating alternative versions of localized content.
-
-{prompt}""",
-                reasoning={
-                    "effort": "medium"  # Medium reasoning for creative variations
-                },
-                text={
-                    "verbosity": "medium"  # Medium verbosity for variety
-                },
-                max_output_tokens=800
+            # Use GPT-5.1 for regeneration
+            response = self.client.chat.completions.create(
+                model="gpt-5.1",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an expert social media copywriter."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                max_tokens=1000
             )
 
-            return response.output_text
+            return response.choices[0].message.content
 
         except Exception as e:
-            return f"Error regenerating caption: {str(e)}"
+            print(f"GPT-5.1 failed: {str(e)}. Falling back to GPT-4o.")
+            try:
+                response = self.client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are an expert social media copywriter."
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    temperature=0.8,
+                    max_tokens=800
+                )
+                return response.choices[0].message.content
+            except Exception as inner_e:
+                return f"Error regenerating caption: {str(inner_e)}"

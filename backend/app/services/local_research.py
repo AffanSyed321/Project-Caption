@@ -72,15 +72,19 @@ class LocalResearchService:
         # If regex patterns fail, use GPT-5.1 to parse the address
         if self.api_key:
             try:
-                response = self.client.responses.create(
-                    model="gpt-5.1",
-                    input=f'Extract the city name and state from this address, return ONLY in this exact format: "City, ST" where ST is the 2-letter state code. Address: {address}',
-                    reasoning={"effort": "low"},
-                    text={"verbosity": "low"},
-                    max_output_tokens=20
+                response = self.client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": f'Extract the city name and state from this address, return ONLY in this exact format: "City, ST" where ST is the 2-letter state code. Address: {address}'
+                        }
+                    ],
+                    temperature=0,
+                    max_tokens=20
                 )
                 # Parse response like "Springfield, IL"
-                result_text = response.output_text.strip()
+                result_text = response.choices[0].message.content.strip()
                 if ',' in result_text:
                     parts = result_text.split(',')
                     if len(parts) == 2:
@@ -102,37 +106,58 @@ class LocalResearchService:
             return f"Basic information for {city}, {state} - API key not provided for detailed research"
 
         try:
-            prompt = f"""Research and provide comprehensive information about {city}, {state} for creating localized social media content for an Urban Air Adventure Park location.
+            prompt = f"""Research and provide comprehensive, "insider" information about {city}, {state} for creating authentic, localized social media content for an Urban Air Adventure Park location.
+            
+            ACT LIKE A LOCAL. Dig deep beyond Wikipedia basics. I need:
+            1. **Deep Demographics**: Not just numbers, but the *vibe*. Is it old money, blue collar, young families, commuters?
+            2. **Hyper-Local Culture**: Specific neighborhoods, local rivalries, inside jokes, slang, or "if you know you know" references.
+            3. **Hidden Gems & Habits**: Where do locals *actually* go? What are the specific weekend rituals?
+            4. **Specific Events**: Not just "Summer Festival", but "The Gaspee Days Parade" or specific high school football rivalries.
+            5. **Economic Reality**: What's the actual economic mood?
+            6. **Voice & Tone**: How do locals speak? (e.g., "Wicked" in RI, specific regional dialects).
+            7. **Community Priorities**: What are the hot topics or shared values right now?
 
-Please provide:
-1. **Demographics & Population**: Key demographic info, population size, is it urban/suburban/rural?
-2. **Community Culture & Values**: What makes this community unique? Local culture, values, lifestyle
-3. **Popular Activities**: What do families and kids do for fun in this area?
-4. **Local Events & Traditions**: Major community events, festivals, traditions
-5. **Economic Character**: Main industries, economic vibe (working class, affluent, etc.)
-6. **Social Media Tone**: What tone/language would resonate with locals? (casual, professional, enthusiastic, etc.)
-7. **Local Attractions**: Popular places, landmarks, or features of the area
-8. **Community Priorities**: What does this community care about? (family, sports, education, etc.)
+            GOAL: The content must feel like it was written by a 28-35 year old resident, not a tourist or an AI. Be specific, gritty if needed, and authentic."""
 
-Focus on information that would help create authentic, locally-relevant social media captions that don't sound generic or like a template. Be specific and practical."""
-
-            response = self.client.responses.create(
+            response = self.client.chat.completions.create(
                 model="gpt-5.1",
-                input=prompt,
-                reasoning={
-                    "effort": "medium"  # Medium reasoning for quality research
-                },
-                text={
-                    "verbosity": "high"  # Want detailed information
-                },
-                max_output_tokens=1200
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "You are an expert local researcher."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                max_tokens=2500
             )
 
-            return response.output_text
+            return response.choices[0].message.content
 
         except Exception as e:
-            print(f"Error researching with GPT: {str(e)}")
-            return f"Basic information for {city}, {state}"
+            print(f"GPT-5.1 research failed: {str(e)}. Falling back to GPT-4o.")
+            try:
+                response = self.client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are an expert local researcher."
+                        },
+                        {
+                            "role": "user",
+                            "content": prompt
+                        }
+                    ],
+                    temperature=0.5,
+                    max_tokens=2500
+                )
+                return response.choices[0].message.content
+            except Exception as inner_e:
+                print(f"Error researching with GPT: {str(inner_e)}")
+                return f"Basic information for {city}, {state}"
 
     def research_location(self, address: str) -> Dict[str, any]:
         """

@@ -88,7 +88,10 @@ function App() {
     }
   };
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (e) => {
+    if (e) e.preventDefault();
+    console.log("Generate button clicked");
+
     if (!media || !goal || !address) {
       setError('Please fill in all fields and upload an image or video');
       return;
@@ -240,6 +243,28 @@ function App() {
     }
   };
 
+  const handleDeleteLocation = async () => {
+    if (!selectedLocationId || selectedLocationId === 'new') return;
+
+    if (window.confirm('Are you sure you want to delete this location?')) {
+      try {
+        await axios.delete(`${API_URL}/locations/${selectedLocationId}`);
+
+        // Remove from saved locations
+        setSavedLocations(prev => prev.filter(loc => loc.id !== parseInt(selectedLocationId)));
+
+        // Reset selection
+        setSelectedLocationId('');
+        setAddress('');
+        setSaveMessage('Location deleted successfully');
+        setTimeout(() => setSaveMessage(''), 3000);
+      } catch (err) {
+        console.error('Error deleting location:', err);
+        setError('Failed to delete location');
+      }
+    }
+  };
+
   const handleReset = () => {
     setMedia(null);
     setMediaPreview(null);
@@ -264,7 +289,7 @@ function App() {
   return (
     <div className="container">
       <header>
-        <h1>🎈 Urban Air Caption Generator</h1>
+        <h1>🎈 Captionator</h1>
         <p>Create localized, authentic captions for your Urban Air locations</p>
       </header>
 
@@ -284,7 +309,7 @@ function App() {
             {mediaPreview && (
               <div className="image-preview">
                 {mediaType === 'video' ? (
-                  <video src={mediaPreview} controls style={{width: '100%', maxHeight: '300px'}} />
+                  <video src={mediaPreview} controls style={{ width: '100%', maxHeight: '300px' }} />
                 ) : (
                   <img src={mediaPreview} alt="Preview" />
                 )}
@@ -305,19 +330,48 @@ function App() {
 
           <div className="form-group">
             <label>Urban Air Location</label>
-            <select
-              value={selectedLocationId}
-              onChange={handleLocationSelect}
-              className="select-input"
-            >
-              <option value="">-- Select a location --</option>
-              {savedLocations.map(loc => (
-                <option key={loc.id} value={loc.id}>
-                  {loc.display}
-                </option>
-              ))}
-              <option value="new">+ Enter New Location</option>
-            </select>
+            <div style={{ display: 'flex', alignItems: 'center' }}>
+              <select
+                value={selectedLocationId}
+                onChange={handleLocationSelect}
+                className="select-input"
+                style={{ flex: 1 }}
+              >
+                <option value="">-- Select a location --</option>
+                {savedLocations.map(loc => (
+                  <option key={loc.id} value={loc.id}>
+                    {loc.display}
+                  </option>
+                ))}
+                <option value="new">+ Enter New Location</option>
+              </select>
+
+              {selectedLocationId && selectedLocationId !== 'new' && (
+                <button
+                  onClick={handleDeleteLocation}
+                  className="btn-delete-icon"
+                  title="Delete this location"
+                  style={{
+                    marginLeft: '10px',
+                    background: '#ff4444',
+                    color: 'white',
+                    border: '2px solid #000',
+                    borderRadius: '4px',
+                    padding: '10px 15px',
+                    cursor: 'pointer',
+                    fontWeight: 'bold',
+                    boxShadow: '2px 2px 0px #000',
+                    height: '46px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '20px'
+                  }}
+                >
+                  🗑️
+                </button>
+              )}
+            </div>
           </div>
 
           {selectedLocationId === 'new' && (
@@ -416,12 +470,12 @@ function App() {
                   marginTop: '20px',
                   padding: '20px',
                   background: qualityScores.quality_tier === 'Excellent' ? '#e8f5e9' :
-                             qualityScores.quality_tier === 'Good' ? '#e3f2fd' :
-                             qualityScores.quality_tier === 'Fair' ? '#fff3e0' : '#ffebee',
+                    qualityScores.quality_tier === 'Good' ? '#e3f2fd' :
+                      qualityScores.quality_tier === 'Fair' ? '#fff3e0' : '#ffebee',
                   borderRadius: '8px',
                   border: '2px solid ' + (qualityScores.quality_tier === 'Excellent' ? '#4caf50' :
-                                          qualityScores.quality_tier === 'Good' ? '#2196f3' :
-                                          qualityScores.quality_tier === 'Fair' ? '#ff9800' : '#f44336')
+                    qualityScores.quality_tier === 'Good' ? '#2196f3' :
+                      qualityScores.quality_tier === 'Fair' ? '#ff9800' : '#f44336')
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
                     <h3 style={{ fontSize: '18px', margin: 0, color: '#333' }}>
@@ -434,8 +488,8 @@ function App() {
                         fontSize: '14px',
                         fontWeight: 'bold',
                         background: qualityScores.quality_tier === 'Excellent' ? '#4caf50' :
-                                   qualityScores.quality_tier === 'Good' ? '#2196f3' :
-                                   qualityScores.quality_tier === 'Fair' ? '#ff9800' : '#f44336',
+                          qualityScores.quality_tier === 'Good' ? '#2196f3' :
+                            qualityScores.quality_tier === 'Fair' ? '#ff9800' : '#f44336',
                         color: 'white'
                       }}>
                         {qualityScores.quality_tier}
@@ -469,8 +523,8 @@ function App() {
                             width: `${item.score}%`,
                             height: '100%',
                             background: item.score >= 90 ? '#4caf50' :
-                                       item.score >= 80 ? '#2196f3' :
-                                       item.score >= 70 ? '#ff9800' : '#f44336',
+                              item.score >= 80 ? '#2196f3' :
+                                item.score >= 70 ? '#ff9800' : '#f44336',
                             transition: 'width 0.3s ease'
                           }} />
                         </div>
