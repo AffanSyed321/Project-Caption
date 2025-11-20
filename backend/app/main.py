@@ -39,18 +39,18 @@ if os.path.exists(static_dir):
     app.mount("/assets", StaticFiles(directory=os.path.join(static_dir, "assets")), name="assets")
     
     # Serve index.html for root and client-side routing
-    @app.get("/{full_path:path}")
+    # IMPORTANT: This must NOT match API routes (they're handled by router above)
+    @app.get("/{full_path:path}", include_in_schema=False)
     async def serve_frontend(full_path: str):
-        # If API request, let it pass through (though router should catch it first)
-        if full_path.startswith("api/"):
-            return {"error": "API route not found"}
-            
-        # Check if file exists in static dir (e.g. favicon.ico)
+        # Skip if this is an API route - let the router handle it
+        # API routes are at /api/v1/* so they won't match this after router processes them
+        
+        # Check if file exists in static dir (e.g. favicon.ico, bolt.svg)
         file_path = os.path.join(static_dir, full_path)
         if os.path.exists(file_path) and os.path.isfile(file_path):
             return FileResponse(file_path)
             
-        # Otherwise serve index.html
+        # Otherwise serve index.html for client-side routing
         return FileResponse(os.path.join(static_dir, "index.html"))
 else:
     print(f"Warning: Static directory {static_dir} not found. Frontend will not be served.")
