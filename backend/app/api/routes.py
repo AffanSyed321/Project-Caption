@@ -12,6 +12,7 @@ from app.models.location import Location
 from app.services.local_research import LocalResearchService
 from app.services.openai_service import OpenAIService
 from app.services.quality_scorer import QualityScorer
+from app.services.caption_chat import CaptionChatService
 
 router = APIRouter()
 
@@ -397,6 +398,55 @@ async def research_location(
             "government_info": local_research.get("government_info", "")
         }
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/chat-edit-caption")
+async def chat_edit_caption(
+    current_caption: str = Form(...),
+    user_instruction: str = Form(...),
+    chat_history: str = Form("[]"),  # JSON string of chat history
+    city: str = Form(...),
+    state: str = Form(...),
+    goal: str = Form(...),
+    platform: str = Form(...)
+):
+    """
+    Edit caption using conversational AI chat.
+    Maintains chat history for context.
+    """
+    try:
+        if not settings.OPENAI_API_KEY:
+            raise HTTPException(
+                status_code=500,
+                detail="OpenAI API key not configured."
+            )
+        
+        import json
+        history = json.loads(chat_history) if chat_history else []
+        
+        chat_service = CaptionChatService(api_key=settings.OPENAI_API_KEY)
+        
+        context = {
+            "city": city,
+            "state": state,
+            "goal": goal,
+            "platform": platform
+        }
+        
+        edited_caption = chat_service.chat_edit_caption(
+            current_caption=current_caption,
+            user_instruction=user_instruction,
+            chat_history=history,
+            context=context
+        )
+        
+        return {
+            "edited_caption": edited_caption,
+            "success": True
+        }
+    
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

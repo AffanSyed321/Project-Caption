@@ -32,6 +32,10 @@ function App() {
   const [selectedLocationId, setSelectedLocationId] = useState('');
   const [error, setError] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
+  const [showChatEditor, setShowChatEditor] = useState(false);
+  const [chatHistory, setChatHistory] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
 
   useEffect(() => {
     // Load saved locations on mount
@@ -268,6 +272,42 @@ function App() {
     }
   };
 
+  const handleChatEdit = async () => {
+    if (!chatInput.trim()) return;
+
+    setChatLoading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append('current_caption', editedCaption);
+      formData.append('user_instruction', chatInput);
+      formData.append('chat_history', JSON.stringify(chatHistory));
+      formData.append('city', locationInfo.city);
+      formData.append('state', locationInfo.state);
+      formData.append('goal', goal);
+      formData.append('platform', platform);
+
+      const response = await axios.post(`${API_URL}/chat-edit-caption`, formData);
+
+      // Update caption with AI response
+      setEditedCaption(response.data.edited_caption);
+
+      // Add to chat history
+      const newHistory = [
+        ...chatHistory,
+        { role: 'user', content: chatInput },
+        { role: 'assistant', content: response.data.edited_caption }
+      ];
+      setChatHistory(newHistory);
+      setChatInput('');
+    } catch (err) {
+      console.error('Error editing caption:', err);
+      setError('Failed to edit caption');
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
   const handleReset = () => {
     setMedia(null);
     setMediaPreview(null);
@@ -459,12 +499,88 @@ function App() {
                 </button>
 
                 <button
+                  onClick={() => setShowChatEditor(!showChatEditor)}
+                  className="btn btn-secondary"
+                  style={{ background: showChatEditor ? '#ff6b35' : '#00d9ff' }}
+                >
+                  {showChatEditor ? '❌ Close Chat' : '💬 Edit with AI'}
+                </button>
+
+                <button
                   onClick={handleSave}
                   className="btn btn-success"
                 >
                   💾 Save Caption
                 </button>
               </div>
+
+              {showChatEditor && (
+                <div className="chat-editor" style={{
+                  marginTop: '20px',
+                  padding: '20px',
+                  background: '#f0f8ff',
+                  border: '4px solid #000',
+                  borderRadius: '8px',
+                  boxShadow: '6px 6px 0px #000'
+                }}>
+                  <h3 style={{ marginTop: 0, fontSize: '18px', fontWeight: 'bold' }}>
+                    ✨ AI Caption Editor
+                  </h3>
+                  <p style={{ fontSize: '14px', color: '#666', marginBottom: '15px' }}>
+                    Tell the AI how you'd like to change the caption. Examples: "make it shorter", "add more emojis", "make it more professional"
+                  </p>
+
+                  {chatHistory.length > 0 && (
+                    <div style={{
+                      maxHeight: '200px',
+                      overflowY: 'auto',
+                      marginBottom: '15px',
+                      padding: '10px',
+                      background: 'white',
+                      border: '2px solid #000',
+                      borderRadius: '4px'
+                    }}>
+                      {chatHistory.map((msg, idx) => (
+                        <div key={idx} style={{
+                          marginBottom: '10px',
+                          padding: '8px',
+                          background: msg.role === 'user' ? '#e3f2fd' : '#e8f5e9',
+                          borderRadius: '4px',
+                          fontSize: '13px'
+                        }}>
+                          <strong>{msg.role === 'user' ? '👤 You:' : '🤖 AI:'}</strong> {msg.content}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <input
+                      type="text"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleChatEdit()}
+                      placeholder="Type your instruction..."
+                      disabled={chatLoading}
+                      style={{
+                        flex: 1,
+                        padding: '12px',
+                        border: '2px solid #000',
+                        borderRadius: '4px',
+                        fontSize: '14px'
+                      }}
+                    />
+                    <button
+                      onClick={handleChatEdit}
+                      disabled={chatLoading || !chatInput.trim()}
+                      className="btn btn-primary"
+                      style={{ minWidth: '100px' }}
+                    >
+                      {chatLoading ? '✨...' : '✨ Apply'}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {saveMessage && <div className="success-message">{saveMessage}</div>}
 
