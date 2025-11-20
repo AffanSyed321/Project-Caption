@@ -9,7 +9,11 @@ class LocalResearchService:
     def __init__(self, api_key: str = None):
         self.api_key = api_key
         if api_key:
-            self.client = OpenAI(api_key=api_key)
+            self.client = OpenAI(
+                api_key=api_key,
+                timeout=60.0,
+                max_retries=3
+            )
 
     def extract_city_state_from_address(self, address: str) -> Dict[str, str]:
         """Extract city and state from address string"""

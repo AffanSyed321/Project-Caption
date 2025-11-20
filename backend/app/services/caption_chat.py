@@ -3,7 +3,11 @@ from typing import List, Dict
 
 class CaptionChatService:
     def __init__(self, api_key: str):
-        self.client = OpenAI(api_key=api_key)
+        self.client = OpenAI(
+            api_key=api_key,
+            timeout=60.0,
+            max_retries=3
+        )
     
     def chat_edit_caption(
         self,

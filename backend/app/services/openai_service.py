@@ -20,7 +20,11 @@ class OpenAIService:
     """
 
     def __init__(self, api_key: str):
-        self.client = OpenAI(api_key=api_key)
+        self.client = OpenAI(
+            api_key=api_key,
+            timeout=60.0,  # 60 second timeout for Railway
+            max_retries=3   # Retry up to 3 times on connection errors
+        )
         self.vision_model = "gpt-4o"  # Vision analysis (GPT-5.1 may not support vision yet)
         self.text_model = "gpt-5.1"   # Caption generation with Responses API + reasoning
 
