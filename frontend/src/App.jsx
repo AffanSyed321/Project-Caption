@@ -11,6 +11,7 @@ function App() {
   const [media, setMedia] = useState(null);
   const [mediaPreview, setMediaPreview] = useState(null);
   const [mediaType, setMediaType] = useState('image');
+  const [videoDescription, setVideoDescription] = useState('');
   const [goal, setGoal] = useState('');
   const [address, setAddress] = useState('');
   const [platform, setPlatform] = useState('Facebook');
@@ -158,6 +159,11 @@ ${logText}`;
       const type = isVideo(file.name) ? 'video' : 'image';
       setMediaType(type);
 
+      // Clear video description if switching to image
+      if (type === 'image') {
+        setVideoDescription('');
+      }
+
       const reader = new FileReader();
       reader.onloadend = () => {
         setMediaPreview(reader.result);
@@ -179,12 +185,24 @@ ${logText}`;
       platform
     });
 
+    // Validate required fields
     if (!media || !goal || !address) {
       const errorMsg = 'Please fill in all fields and upload an image or video';
       addLog('error', 'Validation failed', {
         hasMedia: !!media,
         hasGoal: !!goal,
         hasAddress: !!address
+      });
+      setError(errorMsg);
+      return;
+    }
+
+    // If video, require description
+    if (mediaType === 'video' && !videoDescription.trim()) {
+      const errorMsg = 'Please describe what happens in the video';
+      addLog('error', 'Validation failed - missing video description', {
+        mediaType,
+        hasVideoDescription: !!videoDescription.trim()
       });
       setError(errorMsg);
       return;
@@ -202,13 +220,19 @@ ${logText}`;
     formData.append('address', address);
     formData.append('platform', platform);
 
+    // If video, include user's description
+    if (mediaType === 'video') {
+      formData.append('video_description', videoDescription);
+    }
+
     addLog('info', 'FormData prepared', {
       mediaFile: media.name,
       mediaSize: media.size,
       mediaType: media.type,
       goal,
       address,
-      platform
+      platform,
+      ...(mediaType === 'video' && { videoDescription })
     });
 
     try {
@@ -505,6 +529,34 @@ ${logText}`;
               className="text-input"
             />
           </div>
+
+          {/* Video Description Field - Only shown for videos */}
+          {mediaType === 'video' && (
+            <div className="form-group" style={{
+              background: '#fff3cd',
+              padding: '15px',
+              borderRadius: '8px',
+              border: '2px solid #ffc107'
+            }}>
+              <label style={{ color: '#856404', fontWeight: 'bold' }}>
+                📹 Video Description <span style={{ color: '#d32f2f' }}>*</span>
+              </label>
+              <p style={{ fontSize: '13px', color: '#856404', margin: '5px 0 10px 0' }}>
+                Since you uploaded a video, please describe what happens in it. This helps generate better captions!
+              </p>
+              <textarea
+                placeholder="e.g., Video shows kids jumping on trampolines, going down slides, parents watching and smiling, ends with birthday party scene with cake"
+                value={videoDescription}
+                onChange={(e) => setVideoDescription(e.target.value)}
+                className="text-input"
+                rows="4"
+                style={{
+                  resize: 'vertical',
+                  fontFamily: 'inherit'
+                }}
+              />
+            </div>
+          )}
 
           <div className="form-group">
             <label>Urban Air Location</label>

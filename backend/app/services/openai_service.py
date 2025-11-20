@@ -87,59 +87,91 @@ Be concise but thorough."""
 
     def analyze_video(self, video_path: str) -> str:
         """
-        Use GPT-4o Vision to analyze the uploaded video
+        Use GPT-4o Vision to analyze the uploaded video by extracting frames
         Returns description of what the video shows and its purpose
         """
+        from app.services.video_service import VideoService
+
+        video_service = VideoService()
+        frame_paths = []
+
         try:
-            base64_video = self.encode_video(video_path)
+            # Extract key frames from video (5 frames evenly distributed)
+            print(f"[VIDEO] Extracting frames from {video_path}")
+            frame_paths = video_service.extract_key_frames(video_path, max_frames=5)
+            print(f"[VIDEO] Extracted {len(frame_paths)} frames")
 
-            # Determine video mime type
-            ext = video_path.lower().split('.')[-1]
-            mime_type_map = {
-                'mp4': 'video/mp4',
-                'mov': 'video/quicktime',
-                'avi': 'video/x-msvideo',
-                'mkv': 'video/x-matroska',
-                'webm': 'video/webm',
-                'm4v': 'video/mp4'
-            }
-            mime_type = mime_type_map.get(ext, 'video/mp4')
+            if not frame_paths:
+                return "Error: Could not extract frames from video"
 
-            response = self.client.chat.completions.create(
-                model=self.vision_model,
+            # Analyze each frame
+            frame_analyses = []
+            for idx, frame_path in enumerate(frame_paths):
+                print(f"[VIDEO] Analyzing frame {idx + 1}/{len(frame_paths)}")
+                base64_frame = self.encode_image(frame_path)
+
+                response = self.client.chat.completions.create(
+                    model=self.vision_model,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": f"This is frame {idx + 1} from a video. Briefly describe what you see in this moment."
+                                },
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/jpeg;base64,{base64_frame}"
+                                    }
+                                }
+                            ]
+                        }
+                    ],
+                    max_tokens=150
+                )
+
+                frame_analyses.append(f"Frame {idx + 1}: {response.choices[0].message.content}")
+
+            # Now synthesize all frame analyses into a cohesive video description
+            synthesis_prompt = f"""Based on these {len(frame_analyses)} frames from an Urban Air promotional video, provide a comprehensive analysis:
+
+Frames analyzed:
+{chr(10).join(frame_analyses)}
+
+Synthesize this into a cohesive video analysis covering:
+1. What activities and attractions are shown throughout the video
+2. The energy and atmosphere of the location
+3. Key moments or highlights across the video
+4. People shown (families, kids, teens, staff) and their interactions
+5. Any text, graphics, or promotional messages visible
+6. The overall message or promotion the video is conveying
+7. Target demographic based on the content
+
+Provide a comprehensive analysis that captures the full narrative and feel of the video."""
+
+            synthesis_response = self.client.chat.completions.create(
+                model=self.text_model if hasattr(self, 'text_model') else self.vision_model,
                 messages=[
                     {
                         "role": "user",
-                        "content": [
-                            {
-                                "type": "text",
-                                "text": """Analyze this Urban Air promotional video. Describe:
-1. What activities and attractions are shown throughout the video
-2. The energy and atmosphere of the location
-3. Key moments or highlights in the video
-4. People shown (families, kids, teens, staff) and their interactions
-5. Any text, graphics, or promotional messages displayed
-6. The overall message or promotion the video is conveying
-7. Target demographic based on the video content
-
-Provide a comprehensive analysis that captures the full narrative and feel of the video."""
-                            },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:{mime_type};base64,{base64_video}"
-                                }
-                            }
-                        ]
+                        "content": synthesis_prompt
                     }
                 ],
                 max_tokens=600
             )
 
-            return response.choices[0].message.content
+            return synthesis_response.choices[0].message.content
 
         except Exception as e:
             return f"Error analyzing video: {str(e)}"
+
+        finally:
+            # Clean up temporary frame files
+            if frame_paths:
+                print(f"[VIDEO] Cleaning up {len(frame_paths)} temporary frames")
+                video_service.cleanup_frames(frame_paths)
 
     def analyze_media(self, file_path: str) -> str:
         """

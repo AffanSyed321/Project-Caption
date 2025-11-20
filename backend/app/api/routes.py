@@ -27,6 +27,7 @@ async def generate_caption(
     goal: str = Form(...),
     address: str = Form(...),
     platform: str = Form(...),
+    video_description: str = Form(None, description="User's description of video content (required for videos)"),
     db: Session = Depends(get_db)
 ):
     """
@@ -72,8 +73,21 @@ async def generate_caption(
         media_type = "video" if openai_service.is_video_file(media.filename) else "image"
         print(f"[STEP 2] Analyzing {media_type}: {media.filename}")
         try:
-            media_analysis = openai_service.analyze_media(str(media_path))
-            print(f"[STEP 2] ✓ Media analyzed: {media_analysis[:100]}...")
+            # For videos, use user's description instead of AI analysis (cost-effective!)
+            if media_type == "video":
+                if not video_description:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Video description is required when uploading a video"
+                    )
+                media_analysis = f"Video content (described by user): {video_description}"
+                print(f"[STEP 2] ✓ Using user's video description")
+            else:
+                # For images, use AI analysis
+                media_analysis = openai_service.analyze_media(str(media_path))
+                print(f"[STEP 2] ✓ Media analyzed: {media_analysis[:100]}...")
+        except HTTPException:
+            raise
         except Exception as e:
             print(f"[STEP 2] ✗ Media analysis failed: {e}")
             raise
