@@ -4,7 +4,7 @@ from typing import Dict, Optional
 import os
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config.brand_voice import get_brand_voice_prompt
+from app.config.brand_voice import get_brand_voice_prompt
 
 
 class OpenAIService:
