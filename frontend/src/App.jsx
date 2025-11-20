@@ -2,10 +2,10 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import './App.css';
 
-// Use Railway URL in production, localhost in development
+// Use relative path in production (works with any domain), localhost in development
 const API_URL = import.meta.env.DEV
   ? 'http://localhost:8000/api/v1'
-  : 'https://luminous-strength-production.up.railway.app/api/v1';
+  : '/api/v1';
 
 function App() {
   const [media, setMedia] = useState(null);
