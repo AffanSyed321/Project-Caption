@@ -36,6 +36,7 @@ async def generate_caption(
     - Urban Air location address
     - Target platform (Facebook or Instagram)
     """
+    media_path = None
     try:
         # Validate API key
         if not settings.OPENAI_API_KEY:
@@ -45,27 +46,46 @@ async def generate_caption(
             )
 
         # Save uploaded media temporarily
+        print(f"[STEP 0] Saving uploaded media: {media.filename}")
         media_path = UPLOAD_DIR / media.filename
         with media_path.open("wb") as buffer:
             shutil.copyfileobj(media.file, buffer)
+        print(f"[STEP 0] ✓ Media saved to {media_path}")
 
         # Initialize services
-        research_service = LocalResearchService(api_key=settings.OPENAI_API_KEY)
-        openai_service = OpenAIService(api_key=settings.OPENAI_API_KEY)
+        print("[STEP 1] Initializing services...")
+        try:
+            research_service = LocalResearchService(api_key=settings.OPENAI_API_KEY)
+            print("[STEP 1] ✓ Research service initialized")
+        except Exception as e:
+            print(f"[STEP 1] ✗ Failed to initialize research service: {e}")
+            raise
+        
+        try:
+            openai_service = OpenAIService(api_key=settings.OPENAI_API_KEY)
+            print("[STEP 1] ✓ OpenAI service initialized")
+        except Exception as e:
+            print(f"[STEP 1] ✗ Failed to initialize OpenAI service: {e}")
+            raise
 
-        # Step 1: Analyze the media (image or video)
+        # Step 2: Analyze the media (image or video)
         media_type = "video" if openai_service.is_video_file(media.filename) else "image"
-        print(f"Analyzing {media_type}: {media.filename}")
-        media_analysis = openai_service.analyze_media(str(media_path))
+        print(f"[STEP 2] Analyzing {media_type}: {media.filename}")
+        try:
+            media_analysis = openai_service.analyze_media(str(media_path))
+            print(f"[STEP 2] ✓ Media analyzed: {media_analysis[:100]}...")
+        except Exception as e:
+            print(f"[STEP 2] ✗ Media analysis failed: {e}")
+            raise
 
-        # Step 2: Research local area (or use cached)
-        print(f"Checking location: {address}")
+        # Step 3: Research local area (or use cached)
+        print(f"[STEP 3] Checking location: {address}")
 
         # Check if location exists in database
         existing_location = db.query(Location).filter(Location.address == address).first()
 
         if existing_location:
-            print(f"Using cached research for {existing_location.city}, {existing_location.state}")
+            print(f"[STEP 3] ✓ Using cached research for {existing_location.city}, {existing_location.state}")
             local_research = {
                 "city": existing_location.city,
                 "state": existing_location.state,
@@ -75,47 +95,69 @@ async def generate_caption(
                 "government_info": existing_location.government_info
             }
         else:
-            print(f"Researching new location: {address}")
-            local_research = research_service.research_location(address)
-
-            if "error" in local_research:
-                raise HTTPException(status_code=400, detail=local_research["error"])
+            print(f"[STEP 3] Researching new location: {address}")
+            try:
+                local_research = research_service.research_location(address)
+                if "error" in local_research:
+                    raise HTTPException(status_code=400, detail=local_research["error"])
+                print(f"[STEP 3] ✓ Location researched: {local_research['city']}, {local_research['state']}")
+            except Exception as e:
+                print(f"[STEP 3] ✗ Location research failed: {e}")
+                raise
 
             # Save to database
-            new_location = Location(
-                address=address,
-                city=local_research["city"],
-                state=local_research["state"],
-                is_rural=local_research["is_rural"],
-                gpt_research=local_research.get("gpt_research", ""),
-                chamber_info=local_research.get("chamber_info", ""),
-                government_info=local_research.get("government_info", "")
+            try:
+                new_location = Location(
+                    address=address,
+                    city=local_research["city"],
+                    state=local_research["state"],
+                    is_rural=local_research["is_rural"],
+                    gpt_research=local_research.get("gpt_research", ""),
+                    chamber_info=local_research.get("chamber_info", ""),
+                    government_info=local_research.get("government_info", "")
+                )
+                db.add(new_location)
+                db.commit()
+                print(f"[STEP 3] ✓ Saved location to database")
+            except Exception as e:
+                print(f"[STEP 3] ✗ Database save failed: {e}")
+                raise
+
+        # Step 4: Generate caption
+        print(f"[STEP 4] Generating caption for {local_research['city']}, {local_research['state']}")
+        try:
+            caption = openai_service.generate_caption(
+                goal=goal,
+                image_analysis=media_analysis,
+                local_research=local_research,
+                platform=platform
             )
-            db.add(new_location)
-            db.commit()
-            print(f"Saved location: {local_research['city']}, {local_research['state']}")
+            print(f"[STEP 4] ✓ Caption generated: {caption[:100]}...")
+        except Exception as e:
+            print(f"[STEP 4] ✗ Caption generation failed: {e}")
+            import traceback
+            print(f"[STEP 4] Full traceback:\n{traceback.format_exc()}")
+            raise
 
-        # Step 3: Generate caption
-        print(f"Generating caption for {local_research['city']}, {local_research['state']}")
-        caption = openai_service.generate_caption(
-            goal=goal,
-            image_analysis=media_analysis,  # Works for both images and videos
-            local_research=local_research,
-            platform=platform
-        )
-
-        # Step 4: Score caption quality
-        print("Scoring caption quality...")
-        quality_scorer = QualityScorer(api_key=settings.OPENAI_API_KEY)
-        quality_scores = quality_scorer.score_caption(
-            caption=caption,
-            goal=goal,
-            location=f"{local_research['city']}, {local_research['state']}",
-            image_analysis=media_analysis
-        )
+        # Step 5: Score caption quality
+        print("[STEP 5] Scoring caption quality...")
+        try:
+            quality_scorer = QualityScorer(api_key=settings.OPENAI_API_KEY)
+            quality_scores = quality_scorer.score_caption(
+                caption=caption,
+                goal=goal,
+                location=f"{local_research['city']}, {local_research['state']}",
+                image_analysis=media_analysis
+            )
+            print(f"[STEP 5] ✓ Quality scored")
+        except Exception as e:
+            print(f"[STEP 5] ✗ Quality scoring failed: {e}")
+            # Don't fail the whole request if quality scoring fails
+            quality_scores = {"overall": "N/A", "error": str(e)}
 
         # Clean up uploaded file
         media_path.unlink()
+        print("[STEP 6] ✓ Cleanup complete")
 
         return {
             "caption": caption,
@@ -135,11 +177,25 @@ async def generate_caption(
             }
         }
 
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        if media_path and media_path.exists():
+            media_path.unlink()
+        raise
     except Exception as e:
         # Clean up on error
-        if media_path.exists():
+        if media_path and media_path.exists():
             media_path.unlink()
-        raise HTTPException(status_code=500, detail=str(e))
+        
+        # Return detailed error information
+        import traceback
+        error_details = {
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "traceback": traceback.format_exc()
+        }
+        print(f"[ERROR] {error_details}")
+        raise HTTPException(status_code=500, detail=str(error_details))
 
 
 @router.post("/regenerate-caption")
