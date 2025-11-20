@@ -31,4 +31,12 @@ ENV PYTHONPATH=/app/backend
 ENV PORT=8000
 
 # Run the application
-CMD ["gunicorn", "backend.app.main:app", "--workers", "4", "--worker-class", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000"]
+# Increased timeout to 180s for AI operations (caption generation can take 30-90 seconds)
+# Graceful timeout set to 200s to allow requests to complete
+CMD ["gunicorn", "backend.app.main:app", \
+     "--workers", "2", \
+     "--worker-class", "uvicorn.workers.UvicornWorker", \
+     "--bind", "0.0.0.0:8000", \
+     "--timeout", "180", \
+     "--graceful-timeout", "200", \
+     "--keep-alive", "5"]
