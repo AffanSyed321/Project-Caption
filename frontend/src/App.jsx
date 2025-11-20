@@ -37,14 +37,77 @@ function App() {
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
 
+  // DEBUG LOGGING SYSTEM
+  const [debugLogs, setDebugLogs] = useState([]);
+  const [showDebugPanel, setShowDebugPanel] = useState(false);
+
+  // Helper function to add debug logs
+  const addLog = (type, message, data = null) => {
+    const timestamp = new Date().toISOString();
+    const logEntry = {
+      timestamp,
+      type, // 'info', 'error', 'request', 'response'
+      message,
+      data: data ? JSON.stringify(data, null, 2) : null
+    };
+
+    console.log(`[${type.toUpperCase()}] ${message}`, data || '');
+
+    setDebugLogs(prev => [...prev, logEntry]);
+  };
+
+  // Copy logs to clipboard
+  const copyLogsToClipboard = () => {
+    const logText = debugLogs.map(log =>
+      `[${log.timestamp}] [${log.type.toUpperCase()}] ${log.message}${log.data ? '\n' + log.data : ''}`
+    ).join('\n\n---\n\n');
+
+    const fullLog = `=== CAPTIONATOR DEBUG LOG ===
+Environment: ${import.meta.env.DEV ? 'DEVELOPMENT' : 'PRODUCTION'}
+API URL: ${API_URL}
+User Agent: ${navigator.userAgent}
+Timestamp: ${new Date().toISOString()}
+
+=== LOGS ===
+${logText}`;
+
+    navigator.clipboard.writeText(fullLog).then(() => {
+      alert('Logs copied to clipboard!');
+    }).catch(err => {
+      alert('Failed to copy logs: ' + err.message);
+    });
+  };
+
+  // Clear logs
+  const clearLogs = () => {
+    setDebugLogs([]);
+  };
+
   useEffect(() => {
+    // Log initialization
+    addLog('info', 'App initialized', {
+      environment: import.meta.env.DEV ? 'DEVELOPMENT' : 'PRODUCTION',
+      apiUrl: API_URL,
+      userAgent: navigator.userAgent,
+      timestamp: new Date().toISOString()
+    });
+
     // Load saved locations on mount
     loadLocations();
   }, []);
 
   const loadLocations = async () => {
     try {
+      addLog('request', 'Loading saved locations', { url: `${API_URL}/locations` });
+
       const response = await axios.get(`${API_URL}/locations`);
+
+      addLog('response', 'Locations loaded successfully', {
+        status: response.status,
+        locationCount: response.data.locations.length,
+        locations: response.data.locations
+      });
+
       setSavedLocations(response.data.locations);
 
       // If no saved locations and no location selected, default to "new" to show address input
@@ -52,6 +115,14 @@ function App() {
         setSelectedLocationId('new');
       }
     } catch (err) {
+      addLog('error', 'Failed to load locations', {
+        message: err.message,
+        status: err.response?.status,
+        statusText: err.response?.statusText,
+        data: err.response?.data,
+        url: err.config?.url,
+        stack: err.stack
+      });
       console.error('Error loading locations:', err);
     }
   };
@@ -97,10 +168,25 @@ function App() {
 
   const handleGenerate = async (e) => {
     if (e) e.preventDefault();
-    console.log("Generate button clicked");
+
+    addLog('info', 'Generate button clicked', {
+      hasMedia: !!media,
+      mediaType,
+      mediaName: media?.name,
+      mediaSize: media?.size,
+      goal,
+      address,
+      platform
+    });
 
     if (!media || !goal || !address) {
-      setError('Please fill in all fields and upload an image or video');
+      const errorMsg = 'Please fill in all fields and upload an image or video';
+      addLog('error', 'Validation failed', {
+        hasMedia: !!media,
+        hasGoal: !!goal,
+        hasAddress: !!address
+      });
+      setError(errorMsg);
       return;
     }
 
@@ -116,6 +202,15 @@ function App() {
     formData.append('address', address);
     formData.append('platform', platform);
 
+    addLog('info', 'FormData prepared', {
+      mediaFile: media.name,
+      mediaSize: media.size,
+      mediaType: media.type,
+      goal,
+      address,
+      platform
+    });
+
     try {
       // Show progress stages
       setLoadingStage(`Analyzing ${mediaType}...`);
@@ -126,10 +221,36 @@ function App() {
 
       setLoadingStage('Generating localized caption...');
 
-      const response = await axios.post(`${API_URL}/generate-caption`, formData, {
+      const requestUrl = `${API_URL}/generate-caption`;
+      addLog('request', 'Sending generate caption request', {
+        url: requestUrl,
+        method: 'POST',
+        contentType: 'multipart/form-data',
+        fields: {
+          mediaName: media.name,
+          mediaType: media.type,
+          mediaSize: media.size,
+          goal,
+          address,
+          platform
+        }
+      });
+
+      const response = await axios.post(requestUrl, formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
         },
+      });
+
+      addLog('response', 'Caption generated successfully', {
+        status: response.status,
+        statusText: response.statusText,
+        hasCaption: !!response.data.caption,
+        captionLength: response.data.caption?.length,
+        hasLocationInfo: !!response.data.location_info,
+        hasReasoning: !!response.data.reasoning,
+        hasQualityScores: !!response.data.quality_scores,
+        responseData: response.data
       });
 
       setGeneratedCaption(response.data.caption);
@@ -145,8 +266,22 @@ function App() {
       // Reload locations in case a new one was saved
       loadLocations();
     } catch (err) {
-      setError(err.response?.data?.detail || 'Error generating caption. Make sure backend is running and API key is configured.');
-      console.error(err);
+      const errorDetail = err.response?.data?.detail || 'Error generating caption. Make sure backend is running and API key is configured.';
+
+      addLog('error', 'Caption generation failed', {
+        message: err.message,
+        status: err.response?.status,
+        statusText: err.response?.statusText,
+        responseData: err.response?.data,
+        requestUrl: err.config?.url,
+        requestMethod: err.config?.method,
+        headers: err.config?.headers,
+        networkError: !err.response,
+        errorStack: err.stack
+      });
+
+      setError(errorDetail);
+      console.error('Caption generation error:', err);
       setLoadingStage('');
     } finally {
       setLoading(false);
@@ -828,6 +963,165 @@ function App() {
 
           {error && <div className="error-message">{error}</div>}
         </div>
+      </div>
+
+      {/* DEBUG PANEL */}
+      <div style={{
+        position: 'fixed',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        background: '#1e1e1e',
+        color: '#d4d4d4',
+        borderTop: '2px solid #007acc',
+        zIndex: 9999,
+        maxHeight: showDebugPanel ? '400px' : '40px',
+        transition: 'max-height 0.3s ease',
+        overflow: 'hidden',
+        fontFamily: 'monospace',
+        fontSize: '12px'
+      }}>
+        {/* Debug Panel Header */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '8px 16px',
+          background: '#252526',
+          borderBottom: showDebugPanel ? '1px solid #3e3e42' : 'none',
+          cursor: 'pointer'
+        }} onClick={() => setShowDebugPanel(!showDebugPanel)}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '16px' }}>{showDebugPanel ? '▼' : '▶'}</span>
+            <strong style={{ color: '#4ec9b0' }}>🐛 Debug Console</strong>
+            <span style={{
+              background: debugLogs.length > 0 ? '#007acc' : '#666',
+              padding: '2px 8px',
+              borderRadius: '10px',
+              fontSize: '11px',
+              color: 'white'
+            }}>
+              {debugLogs.length} logs
+            </span>
+            {debugLogs.some(log => log.type === 'error') && (
+              <span style={{
+                background: '#d32f2f',
+                padding: '2px 8px',
+                borderRadius: '10px',
+                fontSize: '11px',
+                color: 'white'
+              }}>
+                {debugLogs.filter(log => log.type === 'error').length} errors
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                copyLogsToClipboard();
+              }}
+              style={{
+                background: '#007acc',
+                border: 'none',
+                color: 'white',
+                padding: '4px 12px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '11px',
+                fontWeight: 'bold'
+              }}
+            >
+              📋 Copy Logs
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                clearLogs();
+              }}
+              style={{
+                background: '#d32f2f',
+                border: 'none',
+                color: 'white',
+                padding: '4px 12px',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                fontSize: '11px'
+              }}
+            >
+              🗑️ Clear
+            </button>
+          </div>
+        </div>
+
+        {/* Debug Panel Content */}
+        {showDebugPanel && (
+          <div style={{
+            padding: '12px',
+            overflowY: 'auto',
+            maxHeight: '360px',
+            background: '#1e1e1e'
+          }}>
+            {debugLogs.length === 0 ? (
+              <div style={{ color: '#888', textAlign: 'center', padding: '20px' }}>
+                No logs yet. Interact with the app to see debug information.
+              </div>
+            ) : (
+              debugLogs.map((log, idx) => (
+                <div key={idx} style={{
+                  marginBottom: '12px',
+                  padding: '10px',
+                  background: '#252526',
+                  borderRadius: '4px',
+                  borderLeft: `3px solid ${
+                    log.type === 'error' ? '#d32f2f' :
+                    log.type === 'request' ? '#ff9800' :
+                    log.type === 'response' ? '#4caf50' :
+                    '#2196f3'
+                  }`
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                    <span style={{
+                      color: log.type === 'error' ? '#f48771' :
+                             log.type === 'request' ? '#ffb74d' :
+                             log.type === 'response' ? '#81c784' :
+                             '#64b5f6',
+                      fontWeight: 'bold',
+                      textTransform: 'uppercase',
+                      fontSize: '10px'
+                    }}>
+                      {log.type}
+                    </span>
+                    <span style={{ color: '#858585', fontSize: '10px' }}>
+                      {new Date(log.timestamp).toLocaleTimeString()}
+                    </span>
+                  </div>
+                  <div style={{ color: '#d4d4d4', marginBottom: '6px' }}>
+                    {log.message}
+                  </div>
+                  {log.data && (
+                    <details style={{ marginTop: '6px' }}>
+                      <summary style={{ color: '#569cd6', cursor: 'pointer', fontSize: '11px' }}>
+                        Show Details
+                      </summary>
+                      <pre style={{
+                        marginTop: '6px',
+                        padding: '8px',
+                        background: '#1e1e1e',
+                        borderRadius: '4px',
+                        overflowX: 'auto',
+                        fontSize: '11px',
+                        color: '#ce9178'
+                      }}>
+                        {log.data}
+                      </pre>
+                    </details>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
