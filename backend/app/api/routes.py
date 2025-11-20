@@ -458,3 +458,59 @@ async def health_check():
         "status": "healthy",
         "openai_configured": bool(settings.OPENAI_API_KEY)
     }
+
+
+@router.get("/test-openai")
+async def test_openai():
+    """
+    Diagnostic endpoint to test OpenAI API connectivity.
+    Returns detailed information about connection success/failure.
+    """
+    try:
+        if not settings.OPENAI_API_KEY:
+            return {
+                "status": "error",
+                "error": "OpenAI API key not configured",
+                "api_key_present": False
+            }
+        
+        from openai import OpenAI
+        import time
+        
+        # Test with minimal timeout first
+        start_time = time.time()
+        client = OpenAI(
+            api_key=settings.OPENAI_API_KEY,
+            timeout=30.0,
+            max_retries=2
+        )
+        
+        # Simple test call
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": "Say 'OK'"}],
+            max_tokens=5
+        )
+        
+        elapsed_time = time.time() - start_time
+        
+        return {
+            "status": "success",
+            "api_key_present": True,
+            "api_key_prefix": settings.OPENAI_API_KEY[:10] + "...",
+            "response": response.choices[0].message.content,
+            "model_used": response.model,
+            "elapsed_seconds": round(elapsed_time, 2),
+            "message": "OpenAI API connection successful!"
+        }
+    
+    except Exception as e:
+        import traceback
+        return {
+            "status": "error",
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "traceback": traceback.format_exc(),
+            "api_key_present": bool(settings.OPENAI_API_KEY),
+            "api_key_prefix": settings.OPENAI_API_KEY[:10] + "..." if settings.OPENAI_API_KEY else None
+        }
